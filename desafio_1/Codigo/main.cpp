@@ -45,8 +45,8 @@ unsigned int* loadSeedMasking(const char* nombreArchivo, int &seed, int &n_pixel
 int main()
 {
     // Definición de rutas de archivo de entrada (imagen original) y salida (imagen modificada)
-    QString archivoEntrada = "I_O.bmp";
-    QString archivoSalida = "I_D.bmp";
+   QString archivoEntrada = "I_O.bmp";
+   QString archivoSalida = "I_D.bmp";
 
     // Variables para almacenar las dimensiones de la imagen
     int height = 0;
@@ -99,7 +99,7 @@ int main()
 
 
 unsigned char* loadPixels(QString input, int &width, int &height){
-/*
+    /*
  * @brief Carga una imagen BMP desde un archivo y extrae los datos de píxeles en formato RGB.
  *
  * Esta función utiliza la clase QImage de Qt para abrir una imagen en formato BMP, convertirla al
@@ -150,7 +150,7 @@ unsigned char* loadPixels(QString input, int &width, int &height){
 }
 
 bool exportImage(unsigned char* pixelData, int width,int height, QString archivoSalida){
-/*
+    /*
  * @brief Exporta una imagen en formato BMP a partir de un arreglo de píxeles en formato RGB.
  *
  * Esta función crea una imagen de tipo QImage utilizando los datos contenidos en el arreglo dinámico
@@ -195,7 +195,7 @@ bool exportImage(unsigned char* pixelData, int width,int height, QString archivo
 }
 
 unsigned int* loadSeedMasking(const char* nombreArchivo, int &seed, int &n_pixels){
-/*
+    /*
  * @brief Carga la semilla y los resultados del enmascaramiento desde un archivo de texto.
  *
  * Esta función abre un archivo de texto que contiene una semilla en la primera línea y,
@@ -269,15 +269,35 @@ unsigned int* loadSeedMasking(const char* nombreArchivo, int &seed, int &n_pixel
     return RGB;
 }
 
+// Transformaciones bit a bit y enmascaramiento
 
+void xorTransform(unsigned char* img1, unsigned char* img2, int size) {
+    for (int i = 0; i < size; i++) {
+        img1[i] ^= img2[i];
+    }
+}
 
+void rotateBitsRight(unsigned char* data, int size, int n) {
+    for (int i = 0; i < size; i++) {
+        data[i] = (data[i] >> n) | (data[i] << (8 - n));
+    }
+}
 
+void shiftBitsLeft(unsigned char* data, int size, int n) {
+    for (int i = 0; i < size; i++) {
+        data[i] = data[i] << n;
+    }
+}
 
+void applyMask(unsigned char* img, unsigned char* mask, int seed, int maskSize, unsigned int* result) {
+    for (int i = 0; i < maskSize * 3; i++) {
+        result[i] = img[i + seed] + mask[i];
+    }
+}
 
-
-
-
-
-
-
-
+bool compareMasking(unsigned int* reference, unsigned int* generated, int n_pixels) {
+    for (int i = 0; i < n_pixels * 3; i++) {
+        if (reference[i] != generated[i]) return false;
+    }
+    return true;
+}
