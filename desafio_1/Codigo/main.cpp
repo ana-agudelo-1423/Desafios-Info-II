@@ -1,10 +1,12 @@
-
 #include <fstream>
-using namespace std;
 #include <iostream>
 #include <QCoreApplication>
 #include <QImage>
+#include <QFileInfo>
 
+using namespace std;
+
+// ----------------------------- OPERACIONES A NIVEL DE BITS ----------------------------- //
 
 unsigned char rotateRight(unsigned char value, int bits) {
     return (value >> bits) | (value << (8 - bits));
@@ -32,22 +34,10 @@ void rotateImageLeft(unsigned char* src, unsigned char* dest, int totalBytes, in
     }
 }
 
-bool verificarEnmascaramiento(unsigned char* imagen, unsigned char* mascara, unsigned int* resultado, int seed, int n_pixels) {
-    for (int i = 0; i < n_pixels * 3; ++i) {
-        int idxImagen = seed * 3 + i;
-        if ((int(imagen[idxImagen]) + int(mascara[i])) % 256 != resultado[i]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-// ----------------------------- FUNCIONES DE IMAGEN ----------------------------- //
-
 unsigned char* loadPixels(QString input, int &width, int &height) {
     QImage imagen(input);
     if (imagen.isNull()) {
-        cout << "Error: No se pudo cargar la imagen BMP." << endl;
+        cerr << "Error: No se pudo cargar la imagen: " << input.toStdString() << endl;
         return nullptr;
     }
     imagen = imagen.convertToFormat(QImage::Format_RGB888);
@@ -69,74 +59,178 @@ bool exportImage(unsigned char* pixelData, int width, int height, QString archiv
         memcpy(outputImage.scanLine(y), pixelData + y * width * 3, width * 3);
     }
     if (!outputImage.save(archivoSalida, "BMP")) {
-        cout << "Error: No se pudo guardar la imagen BMP modificada.";
+        cerr << "Error: No se pudo guardar la imagen: " << archivoSalida.toStdString() << endl;
         return false;
-    } else {
-        cout << "Imagen BMP modificada guardada como " << archivoSalida.toStdString() << endl;
-        return true;
     }
+    cout << "Imagen guardada como " << archivoSalida.toStdString() << endl;
+    return true;
 }
 
-unsigned int* loadSeedMasking(const char* nombreArchivo, int &seed, int &n_pixels) {
+
+struct MaskingResult {
+    int seed;
+    int pixelCount;
+    unsigned int* RGB;
+};
+
+MaskingResult* loadSeedMasking(const char* nombreArchivo) {
     ifstream archivo(nombreArchivo);
     if (!archivo.is_open()) {
-        cout << "No se pudo abrir el archivo." << endl;
+        cerr << "No se pudo abrir el archivo: " << nombreArchivo << endl;
         return nullptr;
     }
-    archivo >> seed;
+
+    MaskingResult* result = new MaskingResult;
+    archivo >> result->seed;
+
+    // Contar el número de píxeles
+    result->pixelCount = 0;
     int r, g, b;
     while (archivo >> r >> g >> b) {
-        n_pixels++;
+        result->pixelCount++;
     }
-    archivo.close();
-    archivo.open(nombreArchivo);
-    if (!archivo.is_open()) {
-        cout << "Error al reabrir el archivo." << endl;
-        return nullptr;
-    }
-    unsigned int* RGB = new unsigned int[n_pixels * 3];
-    archivo >> seed;
-    for (int i = 0; i < n_pixels * 3; i += 3) {
+
+    // Volver a leer para almacenar los datos
+    archivo.clear();
+    archivo.seekg(0);
+    archivo >> result->seed;
+
+    result->RGB = new unsigned int[result->pixelCount * 3];
+    for (int i = 0; i < result->pixelCount * 3; i += 3) {
         archivo >> r >> g >> b;
-        RGB[i] = r;
-        RGB[i + 1] = g;
-        RGB[i + 2] = b;
+        result->RGB[i] = r;
+        result->RGB[i+1] = g;
+        result->RGB[i+2] = b;
     }
+
     archivo.close();
-    return RGB;
+    return result;
+}
+
+bool verificarEnmascaramiento(unsigned char* imagen, unsigned char* mascara, MaskingResult* resultado) {
+    for (int i = 0; i < resultado->pixelCount * 3; ++i) {
+        int idxImagen = resultado->seed * 3 + i;
+        if ((int(imagen[idxImagen]) + int(mascara[i])) % 256 != resultado->RGB[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// ----------------------------- RECONSTRUCCIÓN DE IMAGEN ----------------------------- //
+
+bool revertTransformation(unsigned char* currentImage, unsigned char* IM, MaskingResult* masking,
+                          int width, int height, int& transformationType) {
+    // Intenta revertir XOR
+    unsigned char* temp = new unsigned char[width * height * 3];
+    xorImages(currentImage, IM, temp, width * height * 3);
+
+    if (masking && verificarEnmascaramiento(temp, IM, masking)) {
+        transformationType = 1; // XOR
+        memcpy(currentImage, temp, width * height * 3);
+        delete[] temp;
+        return true;
+    }
+
+    // Intenta revertir rotación derecha 3 bits
+    rotateImageLeft(currentImage, temp, width * height * 3, 3);
+    if (masking && verificarEnmascaramiento(temp, IM, masking)) {
+        transformationType = 2; // Rotación derecha
+        memcpy(currentImage, temp, width * height * 3);
+        delete[] temp;
+        return true;
+    }
+
+    // Intenta revertir rotación izquierda 3 bits
+    rotateImageRight(currentImage, temp, width * height * 3, 3);
+    if (masking && verificarEnmascaramiento(temp, IM, masking)) {
+        transformationType = 3; // Rotación izquierda
+        memcpy(currentImage, temp, width * height * 3);
+        delete[] temp;
+        return true;
+    }
+
+    delete[] temp;
+    return false;
 }
 
 // ----------------------------- MAIN ----------------------------- //
 
-int main() {
-    QString archivoEntrada = "I_D.bmp";
-    QString archivoIM = "IM.bmp";
+int main(int argc, char *argv[]) {
+    QCoreApplication a(argc, argv);
+
+    // Verificar archivos de entrada
+    QString archivoEntrada = "I_O.bmp";
+    QString archivoIM = "I_M.bmp";
     QString archivoMascara = "M.bmp";
 
+    QFileInfo checkFile(archivoEntrada);
+    if (!checkFile.exists()) {
+        cerr << "Error: Archivo " << archivoEntrada.toStdString() << " no encontrado." << endl;
+        return 1;
+    }
+
+    // Cargar imágenes
     int width = 0, height = 0;
     unsigned char* imagen = loadPixels(archivoEntrada, width, height);
     unsigned char* imgIM = loadPixels(archivoIM, width, height);
     unsigned char* mascara = loadPixels(archivoMascara, width, height);
 
-    unsigned char* xorResult = new unsigned char[width * height * 3];
-    xorImages(imagen, imgIM, xorResult, width * height * 3);
-    exportImage(xorResult, width, height, "xor_output.bmp");
+    if (!imagen || !imgIM || !mascara) {
+        cout << "Error al cargar una o mas imagenes." << endl;
+        return 1;
+    }
 
-    unsigned char* rotada = new unsigned char[width * height * 3];
-    rotateImageRight(imagen, rotada, width * height * 3, 3);
-    exportImage(rotada, width, height, "rotada_output.bmp");
+    // Cargar archivos de enmascaramiento
+    MaskingResult* masking1 = loadSeedMasking("M1.txt");
+    MaskingResult* masking2 = loadSeedMasking("M2.txt");
 
-    int seed = 0, n_pixels = 0;
-    unsigned int* resultado = loadSeedMasking("M1.txt", seed, n_pixels);
-    bool valido = verificarEnmascaramiento(imagen, mascara, resultado, seed, n_pixels);
-    cout << "\n¿El enmascaramiento es válido? " << (valido ? "Sí" : "No") << endl;
+    if (!masking1 || !masking2) {
+        cerr << "Error al cargar archivos de enmascaramiento." << endl;
+        return 1;
+    }
 
+    // Proceso de reconstrucción
+    unsigned char* currentImage = new unsigned char[width * height * 3];
+    memcpy(currentImage, imagen, width * height * 3);
+
+    int transformationType = 0;
+    bool success = false;
+
+    // Intentar revertir transformaciones en diferentes órdenes
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        memcpy(currentImage, imagen, width * height * 3);
+
+        // Primer paso de reversión
+        if (revertTransformation(currentImage, imgIM, masking2, width, height, transformationType)) {
+            cout << "Primera transformación revertida: " << transformationType << endl;
+
+            // Segundo paso de reversión
+            if (revertTransformation(currentImage, imgIM, masking1, width, height, transformationType)) {
+                cout << "Segunda transformación revertida: " << transformationType << endl;
+                success = true;
+                break;
+            }
+        }
+
+        // Intentar otro orden si el primero falló
+        swap(masking1, masking2);
+    }
+
+    if (success) {
+        exportImage(currentImage, width, height, "reconstructed.bmp");
+        cout << "Reconstrucción exitosa!" << endl;
+    } else {
+        cerr << "No se pudo reconstruir la imagen original." << endl;
+    }
+
+    // Liberar memoria
     delete[] imagen;
     delete[] imgIM;
     delete[] mascara;
-    delete[] xorResult;
-    delete[] rotada;
-    delete[] resultado;
+    delete[] currentImage;
+    delete masking1;
+    delete masking2;
 
-    return 0;
+    return success ? 0 : 1;
 }
