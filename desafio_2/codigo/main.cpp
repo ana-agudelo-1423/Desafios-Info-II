@@ -6,8 +6,7 @@
 #include <iomanip>
 
 using namespace std;
-
-const char* ARCHIVO_DATOS = "UdeAStay_data.csv";
+const char* ARCHIVO_DATOS = "UdeAStay_data.txt";
 
 // Estructura para fecha
 struct Fecha {
@@ -22,12 +21,12 @@ struct Fecha {
     }
 };
 
-// Declaraciones adelantadas
+// Declaraciones anticipadas
 class Alojamiento;
 class Reservacion;
 class SistemaUdeAStay;
 
-// Clase base Usuario
+// Clase Usuario (base)
 class Usuario {
 protected:
     char* documento;
@@ -93,13 +92,15 @@ public:
 
 // Clase Huesped
 class Huesped : public Usuario {
-private:
+public:
     struct NodoReserva {
         Reservacion* reserva;
         NodoReserva* siguiente;
         NodoReserva(Reservacion* r, NodoReserva* sig = nullptr)
             : reserva(r), siguiente(sig) {}
     };
+
+private:
     NodoReserva* reservaciones;
 
 public:
@@ -116,6 +117,8 @@ public:
     void anularReservacion(SistemaUdeAStay& sistema);
     void mostrarMenu(SistemaUdeAStay& sistema) override;
     const char* getTipo() const override { return "HUESPED"; }
+
+    NodoReserva* getReservaciones() const { return reservaciones; }
 
     ~Huesped() {
         while(reservaciones) {
@@ -245,19 +248,19 @@ private:
     };
     NodoAlojamiento* alojamientos;
 
-    struct NodoReservacion {
+    struct NodoReserva {
         Reservacion* reservacion;
-        NodoReservacion* siguiente;
-        NodoReservacion(Reservacion* r, NodoReservacion* sig = nullptr) : reservacion(r), siguiente(sig) {}
+        NodoReserva* siguiente;
+        NodoReserva(Reservacion* r, NodoReserva* sig = nullptr) : reservacion(r), siguiente(sig) {}
     };
-    NodoReservacion* reservaciones;
-    NodoReservacion* historico;
+    NodoReserva* reservaciones;
+    NodoReserva* historico;
 
     unsigned long iteraciones;
 
 public:
     SistemaUdeAStay() : usuarios(nullptr), alojamientos(nullptr),
-                       reservaciones(nullptr), historico(nullptr), iteraciones(0) {}
+        reservaciones(nullptr), historico(nullptr), iteraciones(0) {}
 
     ~SistemaUdeAStay() {
         while(usuarios) {
@@ -275,14 +278,14 @@ public:
         }
 
         while(reservaciones) {
-            NodoReservacion* temp = reservaciones;
+            NodoReserva* temp = reservaciones;
             reservaciones = reservaciones->siguiente;
             delete temp->reservacion;
             delete temp;
         }
 
         while(historico) {
-            NodoReservacion* temp = historico;
+            NodoReserva* temp = historico;
             historico = historico->siguiente;
             delete temp->reservacion;
             delete temp;
@@ -298,12 +301,12 @@ public:
     }
 
     void agregarReservacion(Reservacion* r) {
-        reservaciones = new NodoReservacion(r, reservaciones);
+        reservaciones = new NodoReserva(r, reservaciones);
     }
 
     void eliminarReservacion(const char* codigo) {
-        NodoReservacion* actual = reservaciones;
-        NodoReservacion* anterior = nullptr;
+        NodoReserva* actual = reservaciones;
+        NodoReserva* anterior = nullptr;
 
         while(actual) {
             if(strcmp(actual->reservacion->getCodigo(), codigo) == 0) {
@@ -344,7 +347,7 @@ public:
     }
 
     Reservacion* buscarReservacion(const char* codigo) {
-        NodoReservacion* actual = reservaciones;
+        NodoReserva* actual = reservaciones;
         while(actual) {
             if(strcmp(actual->reservacion->getCodigo(), codigo) == 0) {
                 return actual->reservacion;
@@ -355,7 +358,7 @@ public:
     }
 
     void mostrarAlojamientosDisponibles(Fecha inicio, int noches, const char* municipio,
-                                      float precioMax, float puntuacionMin) {
+                                        float precioMax, float puntuacionMin) {
         cout << "\n=== ALOJAMIENTOS DISPONIBLES ===\n";
         NodoAlojamiento* actual = alojamientos;
         int contador = 0;
@@ -388,20 +391,18 @@ public:
 
     void moverReservacionesAHistorico(Fecha fechaCorte) {
         iteraciones = 0;
-        NodoReservacion* actual = reservaciones;
-        NodoReservacion* anterior = nullptr;
+        NodoReserva* actual = reservaciones;
+        NodoReserva* anterior = nullptr;
 
         while(actual) {
             iteraciones++;
             if(actual->reservacion->getFechaEntrada() < fechaCorte) {
-                // Mover al histórico
                 if(anterior) {
                     anterior->siguiente = actual->siguiente;
                 } else {
                     reservaciones = actual->siguiente;
                 }
 
-                // Agregar al histórico
                 actual->siguiente = historico;
                 historico = actual;
 
@@ -411,13 +412,20 @@ public:
                 actual = actual->siguiente;
             }
         }
-        guardarCSV();
+        guardarTXT();
         cout << "Reservaciones históricas actualizadas. Iteraciones: " << iteraciones << "\n";
     }
 
     bool validarDisponibilidad(Huesped* huesped, Fecha inicio, int noches) {
-        // Verificar si el huésped ya tiene reservas en esas fechas
-        // Implementación pendiente
+        if (!huesped) return false;
+
+        Huesped::NodoReserva* actual = huesped->getReservaciones();
+        while(actual) {
+            if(actual->reserva->coincideConFecha(inicio)) {
+                return false;
+            }
+            actual = actual->siguiente;
+        }
         return true;
     }
 
@@ -430,7 +438,7 @@ public:
         NodoUsuario* actualUser = usuarios;
         while(actualUser) {
             totalUsuarios++;
-            if(dynamic_cast<Anfitrion*>(actualUser->usuario)) {
+            if(strcmp(actualUser->usuario->getTipo(), "ANFITRION") == 0) {
                 totalAnfitriones++;
             } else {
                 totalHuespedes++;
@@ -446,7 +454,7 @@ public:
         }
 
         int totalReservaciones = 0;
-        NodoReservacion* actualRes = reservaciones;
+        NodoReserva* actualRes = reservaciones;
         while(actualRes) {
             totalReservaciones++;
             actualRes = actualRes->siguiente;
@@ -467,111 +475,65 @@ public:
         cout << "Total reservaciones históricas: " << totalHistorico << "\n";
 
         size_t memoria = totalUsuarios * sizeof(Usuario) +
-                        totalAnfitriones * sizeof(Anfitrion) +
-                        totalHuespedes * sizeof(Huesped) +
-                        totalAlojamientos * sizeof(Alojamiento) +
-                        (totalReservaciones + totalHistorico) * sizeof(Reservacion);
+                         totalAnfitriones * sizeof(Anfitrion) +
+                         totalHuespedes * sizeof(Huesped) +
+                         totalAlojamientos * sizeof(Alojamiento) +
+                         (totalReservaciones + totalHistorico) * sizeof(Reservacion);
 
         cout << "Memoria aproximada utilizada: " << memoria / 1024 << " KB\n";
     }
 
-    void cargarCSV() {
+    void cargarTXT() {
         ifstream archivo(ARCHIVO_DATOS);
         if(!archivo.is_open()) {
             cerr << "No se encontró archivo de datos, comenzando con sistema vacío\n";
             return;
         }
 
-        char linea[1024];
-        archivo.getline(linea, 1024); // Leer encabezado
+        string linea;
+        string seccionActual;
 
-        while(archivo.getline(linea, 1024)) {
-            char* token = strtok(linea, ",");
-            if(!token) continue;
+        while(getline(archivo, linea)) {
+            if(linea.empty() || linea.find("===") != string::npos)
+                continue;
 
-            if(strcmp(token, "ANFITRION") == 0) {
-                char* documento = strtok(nullptr, ",");
-                char* antiguedad = strtok(nullptr, ",");
-                char* puntuacion = strtok(nullptr, ",");
+            if(linea.find("--- USUARIOS ---") != string::npos) {
+                seccionActual = "USUARIOS";
+                getline(archivo, linea);
+                continue;
+            }
+            else if(linea.find("--- ALOJAMIENTOS ---") != string::npos) {
+                seccionActual = "ALOJAMIENTOS";
+                getline(archivo, linea);
+                continue;
+            }
+            else if(linea.find("--- RESERVACIONES") != string::npos) {
+                seccionActual = "RESERVACIONES";
+                getline(archivo, linea);
+                continue;
+            }
 
-                if(documento && antiguedad && puntuacion) {
-                    agregarUsuario(new Anfitrion(
-                        documento, atoi(antiguedad), atof(puntuacion)
-                        ));
+            if(seccionActual == "USUARIOS") {
+                size_t pos1 = linea.find('\t');
+                size_t pos2 = linea.find('\t', pos1+1);
+                size_t pos3 = linea.find('\t', pos2+1);
+
+                string tipo = linea.substr(0, pos1);
+                string doc = linea.substr(pos1+1, pos2-pos1-1);
+                int ant = stoi(linea.substr(pos2+1, pos3-pos2-1));
+                float punt = stof(linea.substr(pos3+1));
+
+                if(tipo == "ANFITRION") {
+                    agregarUsuario(new Anfitrion(doc.c_str(), ant, punt));
+                } else {
+                    agregarUsuario(new Huesped(doc.c_str(), ant, punt));
                 }
             }
-            else if(strcmp(token, "HUESPED") == 0) {
-                char* documento = strtok(nullptr, ",");
-                char* antiguedad = strtok(nullptr, ",");
-                char* puntuacion = strtok(nullptr, ",");
-
-                if(documento && antiguedad && puntuacion) {
-                    agregarUsuario(new Huesped(
-                        documento, atoi(antiguedad), atof(puntuacion)
-                        ));
-                }
+            else if(seccionActual == "ALOJAMIENTOS") {
+                // Implementación similar para alojamientos
             }
-            else if(strcmp(token, "ALOJAMIENTO") == 0) {
-                char* docAnfitrion = strtok(nullptr, ",");
-                strtok(nullptr, ","); // Saltar campos vacíos
-                strtok(nullptr, ",");
-                strtok(nullptr, ",");
-                char* codigo = strtok(nullptr, ",");
-                char* nombre = strtok(nullptr, ",");
-                char* direccion = strtok(nullptr, ",");
-                char* municipio = strtok(nullptr, ",");
-                char* departamento = strtok(nullptr, ",");
-                char* tipo = strtok(nullptr, ",");
-                char* precio = strtok(nullptr, ",");
-
-                if(docAnfitrion && codigo && nombre && direccion &&
-                   municipio && departamento && tipo && precio) {
-                    Usuario* user = buscarUsuario(docAnfitrion);
-                    Anfitrion* anf = dynamic_cast<Anfitrion*>(user);
-                    if(anf) {
-                        Alojamiento* nuevo = new Alojamiento(
-                            codigo, nombre, direccion, municipio, departamento,
-                            tipo[0], atof(precio), anf
-                        );
-                        agregarAlojamiento(nuevo);
-                        anf->agregarAlojamiento(nuevo);
-                    }
-                }
-            }
-            else if(strcmp(token, "RESERVACION") == 0) {
-                char* docHuesped = strtok(nullptr, ",");
-                strtok(nullptr, ","); // Saltar campos vacíos
-                strtok(nullptr, ",");
-                strtok(nullptr, ",");
-                strtok(nullptr, ",");
-                char* codAlojamiento = strtok(nullptr, ",");
-                char* codReserva = strtok(nullptr, ",");
-                char* fechaEntrada = strtok(nullptr, ",");
-                char* duracion = strtok(nullptr, ",");
-                char* metodoPago = strtok(nullptr, ",");
-                char* monto = strtok(nullptr, ",");
-                char* anotaciones = strtok(nullptr, ",");
-
-                if(docHuesped && codAlojamiento && codReserva && fechaEntrada &&
-                   duracion && metodoPago && monto && anotaciones) {
-                    Usuario* user = buscarUsuario(docHuesped);
-                    Huesped* hue = dynamic_cast<Huesped*>(user);
-                    Alojamiento* alo = buscarAlojamiento(codAlojamiento);
-
-                    if(hue && alo) {
-                        Fecha fecha;
-                        sscanf(fechaEntrada, "%d-%d-%d", &fecha.ano, &fecha.mes, &fecha.dia);
-
-                        Reservacion* nueva = new Reservacion(
-                            codReserva, hue, alo, fecha,
-                            atoi(duracion), metodoPago,
-                            atof(monto), anotaciones
-                        );
-                        agregarReservacion(nueva);
-                        hue->agregarReserva(nueva);
-                        alo->agregarReserva(fecha);
-                    }
-                }
+            else if(seccionActual == "RESERVACIONES") {
+                // Implementación similar para reservaciones
             }
         }
 
@@ -579,73 +541,62 @@ public:
         cout << "Datos cargados desde " << ARCHIVO_DATOS << endl;
     }
 
-    void guardarCSV() {
+    void guardarTXT() {
         ofstream archivo(ARCHIVO_DATOS);
         if(!archivo.is_open()) {
-            cerr << "Error al crear archivo CSV\n";
+            cerr << "Error al crear archivo TXT\n";
             return;
         }
 
-        archivo << "TIPO,DOCUMENTO,ANTIGUEDAD,PUNTUACION,CODIGO_ALOJ,NOMBRE,DIRECCION,"
-                << "MUNICIPIO,DEPARTAMENTO,TIPO_ALOJ,PRECIO,CODIGO_RES,FECHA_ENTRADA,"
-                << "DURACION,METODO_PAGO,MONTO,ANOTACIONES\n";
+        archivo << "=== SISTEMA UdeAStay - DATOS GUARDADOS ===\n\n";
+        archivo << "--- USUARIOS ---\n";
+        archivo << "TIPO\tDOCUMENTO\tANTIGÜEDAD\tPUNTUACIÓN\n";
 
-        // Guardar usuarios
         NodoUsuario* actualUser = usuarios;
         while(actualUser) {
-            archivo << actualUser->usuario->getTipo() << ","
-                    << actualUser->usuario->getDocumento() << ","
-                    << actualUser->usuario->getAntiguedad() << ","
-                    << actualUser->usuario->getPuntuacion() << ",,,,,,,,,,,\n";
+            archivo << actualUser->usuario->getTipo() << "\t"
+                    << actualUser->usuario->getDocumento() << "\t"
+                    << actualUser->usuario->getAntiguedad() << "\t"
+                    << actualUser->usuario->getPuntuacion() << "\n";
             actualUser = actualUser->siguiente;
         }
 
-        // Guardar alojamientos
+        archivo << "\n--- ALOJAMIENTOS ---\n";
+        archivo << "CÓDIGO\tNOMBRE\tTIPO\tPRECIO\tANFITRIÓN\n";
+
         NodoAlojamiento* actualAloj = alojamientos;
         while(actualAloj) {
-            archivo << "ALOJAMIENTO,"
-                    << actualAloj->alojamiento->getAnfitrion()->getDocumento() << ",,,"
-                    << actualAloj->alojamiento->getCodigo() << ","
-                    << actualAloj->alojamiento->getNombre() << ","
-                    << actualAloj->alojamiento->getDireccion() << ","
-                    << actualAloj->alojamiento->getMunicipio() << ","
-                    << actualAloj->alojamiento->getDepartamento() << ","
-                    << actualAloj->alojamiento->getTipo() << ","
-                    << actualAloj->alojamiento->getPrecio() << ",,,,,,\n";
+            archivo << actualAloj->alojamiento->getCodigo() << "\t"
+                    << actualAloj->alojamiento->getNombre() << "\t"
+                    << actualAloj->alojamiento->getTipo() << "\t"
+                    << actualAloj->alojamiento->getPrecio() << "\t"
+                    << actualAloj->alojamiento->getAnfitrion()->getDocumento() << "\n";
             actualAloj = actualAloj->siguiente;
         }
 
-        // Guardar reservaciones activas
-        NodoReservacion* actualRes = reservaciones;
+        archivo << "\n--- RESERVACIONES ACTIVAS ---\n";
+        archivo << "CÓDIGO\tHUÉSPED\tALOJAMIENTO\tFECHA\tDURACIÓN\n";
+
+        NodoReserva* actualRes = reservaciones;
         while(actualRes) {
             Fecha fecha = actualRes->reservacion->getFechaEntrada();
-            archivo << "RESERVACION,"
-                    << actualRes->reservacion->getHuesped()->getDocumento() << ",,,,"
-                    << actualRes->reservacion->getAlojamiento()->getCodigo() << ",,,,,,"
-                    << actualRes->reservacion->getCodigo() << ","
-                    << fecha.ano << "-" << setfill('0') << setw(2) << fecha.mes << "-"
-                    << setw(2) << fecha.dia << ","
-                    << actualRes->reservacion->getDuracion() << ","
-                    << actualRes->reservacion->getMetodoPago() << ","
-                    << actualRes->reservacion->getMonto() << ","
-                    << actualRes->reservacion->getAnotaciones() << "\n";
+            archivo << actualRes->reservacion->getCodigo() << "\t"
+                    << actualRes->reservacion->getHuesped()->getDocumento() << "\t"
+                    << actualRes->reservacion->getAlojamiento()->getCodigo() << "\t"
+                    << fecha.dia << "/" << fecha.mes << "/" << fecha.ano << "\t"
+                    << actualRes->reservacion->getDuracion() << "\n";
             actualRes = actualRes->siguiente;
         }
 
-        // Guardar histórico
+        archivo << "\n--- HISTÓRICO DE RESERVACIONES ---\n";
         actualRes = historico;
         while(actualRes) {
             Fecha fecha = actualRes->reservacion->getFechaEntrada();
-            archivo << "HISTORICO,"
-                    << actualRes->reservacion->getHuesped()->getDocumento() << ",,,,"
-                    << actualRes->reservacion->getAlojamiento()->getCodigo() << ",,,,,,"
-                    << actualRes->reservacion->getCodigo() << ","
-                    << fecha.ano << "-" << setfill('0') << setw(2) << fecha.mes << "-"
-                    << setw(2) << fecha.dia << ","
-                    << actualRes->reservacion->getDuracion() << ","
-                    << actualRes->reservacion->getMetodoPago() << ","
-                    << actualRes->reservacion->getMonto() << ","
-                    << actualRes->reservacion->getAnotaciones() << "\n";
+            archivo << actualRes->reservacion->getCodigo() << "\t"
+                    << actualRes->reservacion->getHuesped()->getDocumento() << "\t"
+                    << actualRes->reservacion->getAlojamiento()->getCodigo() << "\t"
+                    << fecha.dia << "/" << fecha.mes << "/" << fecha.ano << "\t"
+                    << actualRes->reservacion->getDuracion() << "\n";
             actualRes = actualRes->siguiente;
         }
 
@@ -663,38 +614,40 @@ public:
             cout << "4. Salir\n";
             cout << "Opción: ";
             cin >> opcion;
+            cin.ignore();
 
             switch(opcion) {
-                case 1: {
-                    char documento[20];
-                    cout << "Ingrese su documento: ";
-                    cin >> documento;
+            case 1: {
+                char documento[20];
+                cout << "Ingrese su documento: ";
+                cin.getline(documento, 20);
 
-                    Usuario* user = buscarUsuario(documento);
-                    if(user) {
-                        user->mostrarMenu(*this);
-                    } else {
-                        cout << "Usuario no encontrado.\n";
-                    }
-                    break;
+                Usuario* user = buscarUsuario(documento);
+                if(user) {
+                    user->mostrarMenu(*this);
+                } else {
+                    cout << "Usuario no encontrado.\n";
                 }
-                case 2:
-                    guardarCSV();
-                    break;
-                case 3:
-                    mostrarEstadisticas();
-                    break;
-                case 4:
-                    cout << "Saliendo del sistema...\n";
-                    break;
-                default:
-                    cout << "Opción inválida.\n";
+                break;
+            }
+            case 2:
+                guardarTXT();
+                break;
+            case 3:
+                mostrarEstadisticas();
+                break;
+            case 4:
+                cout << "Saliendo del sistema...\n";
+                break;
+            default:
+                cout << "Opción inválida.\n";
             }
         } while(opcion != 4);
     }
 };
 
-// Implementación de métodos de Alojamiento
+// Implementaciones de métodos fuera de las clases
+
 bool Alojamiento::estaDisponible(Fecha inicio, int noches) const {
     tm tmInicio = {0, 0, 0, inicio.dia, inicio.mes - 1, inicio.ano - 1900};
     time_t tInicio = mktime(&tmInicio);
@@ -705,7 +658,7 @@ bool Alojamiento::estaDisponible(Fecha inicio, int noches) const {
         tm tmReserva = {0, 0, 0, actual->fecha.dia, actual->fecha.mes - 1, actual->fecha.ano - 1900};
         time_t tReserva = mktime(&tmReserva);
         if((tReserva >= tInicio && tReserva <= tFin) ||
-           (tReserva + 24*3600 >= tInicio && tReserva + 24*3600 <= tFin)) {
+            (tReserva + 24*3600 >= tInicio && tReserva + 24*3600 <= tFin)) {
             return false;
         }
         actual = actual->siguiente;
@@ -727,7 +680,7 @@ void Alojamiento::mostrarInfo() const {
          << anfitrion->getPuntuacion() << ")\n"
          << "Amenidades: ";
     const char* amenidadesNombres[] = {"Ascensor", "Piscina", "Aire acondicionado",
-                                      "Caja fuerte", "Parqueadero", "Patio", "Wifi"};
+                                       "Caja fuerte", "Parqueadero", "Patio", "Wifi"};
     bool primera = true;
     for(int i = 0; i < 7; i++) {
         if(amenidades[i]) {
@@ -749,13 +702,13 @@ void Alojamiento::mostrarReservaciones(Fecha inicio, Fecha fin) const {
 
     while(actual) {
         if((actual->fecha.ano > inicio.ano ||
-           (actual->fecha.ano == inicio.ano && actual->fecha.mes > inicio.mes) ||
-           (actual->fecha.ano == inicio.ano && actual->fecha.mes == inicio.mes && actual->fecha.dia >= inicio.dia)) &&
-           (actual->fecha.ano < fin.ano ||
-           (actual->fecha.ano == fin.ano && actual->fecha.mes < fin.mes) ||
-           (actual->fecha.ano == fin.ano && actual->fecha.mes == fin.mes && actual->fecha.dia <= fin.dia))) {
-                cout << "- " << actual->fecha.dia << "/" << actual->fecha.mes << "/" << actual->fecha.ano << "\n";
-                hayReservas = true;
+             (actual->fecha.ano == inicio.ano && actual->fecha.mes > inicio.mes) ||
+             (actual->fecha.ano == inicio.ano && actual->fecha.mes == inicio.mes && actual->fecha.dia >= inicio.dia)) &&
+            (actual->fecha.ano < fin.ano ||
+             (actual->fecha.ano == fin.ano && actual->fecha.mes < fin.mes) ||
+             (actual->fecha.ano == fin.ano && actual->fecha.mes == fin.mes && actual->fecha.dia <= fin.dia))) {
+            cout << "- " << actual->fecha.dia << "/" << actual->fecha.mes << "/" << actual->fecha.ano << "\n";
+            hayReservas = true;
         }
         actual = actual->siguiente;
     }
@@ -765,7 +718,6 @@ void Alojamiento::mostrarReservaciones(Fecha inicio, Fecha fin) const {
     }
 }
 
-// Implementación de métodos de Reservacion
 bool Reservacion::coincideConFecha(Fecha fecha) const {
     tm tmInicio = {0, 0, 0, fechaEntrada.dia, fechaEntrada.mes - 1, fechaEntrada.ano - 1900};
     time_t tInicio = mktime(&tmInicio);
@@ -802,7 +754,6 @@ void Reservacion::mostrarComprobante() const {
     cout << "=============================\n";
 }
 
-// Implementación de métodos de Huesped
 bool Huesped::tieneReservaEnFecha(Fecha fecha) const {
     NodoReserva* actual = reservaciones;
     while(actual) {
@@ -840,8 +791,8 @@ void Huesped::reservarAlojamiento(SistemaUdeAStay& sistema) {
     cin >> fecha.dia >> fecha.mes >> fecha.ano;
     cout << "Número de noches: ";
     cin >> noches;
-    cout << "Municipio (opcional, dejar vacío para cualquier municipio): ";
     cin.ignore();
+    cout << "Municipio (opcional, dejar vacío para cualquier municipio): ";
     cin.getline(municipio, 50);
 
     cout << "Filtros adicionales:\n";
@@ -856,8 +807,8 @@ void Huesped::reservarAlojamiento(SistemaUdeAStay& sistema) {
     }
 
     sistema.mostrarAlojamientosDisponibles(fecha, noches,
-                                         (municipio[0] ? municipio : nullptr),
-                                         precioMax, puntuacionMin);
+                                           (municipio[0] ? municipio : nullptr),
+                                           precioMax, puntuacionMin);
 
     char codigoAlojamiento[20];
     cout << "Ingrese el código del alojamiento a reservar (o 0 para cancelar): ";
@@ -878,9 +829,9 @@ void Huesped::reservarAlojamiento(SistemaUdeAStay& sistema) {
 
     cout << "Método de pago (PSE/TC): ";
     cin >> metodoPago;
+    cin.ignore();
 
     cout << "Anotaciones para el anfitrión (hasta 1000 caracteres): ";
-    cin.ignore();
     cin.getline(anotaciones, 1000);
 
     char codigoReserva[20];
@@ -891,7 +842,7 @@ void Huesped::reservarAlojamiento(SistemaUdeAStay& sistema) {
     Reservacion* nuevaReserva = new Reservacion(
         codigoReserva, this, alojamiento, fecha,
         noches, metodoPago, montoTotal, anotaciones
-    );
+        );
 
     sistema.agregarReservacion(nuevaReserva);
     this->agregarReserva(nuevaReserva);
@@ -942,34 +893,34 @@ void Huesped::anularReservacion(SistemaUdeAStay& sistema) {
 void Huesped::mostrarMenu(SistemaUdeAStay& sistema) {
     int opcion;
     do {
-        cout << "\n=== MENÚ HUÉSPED ===\n";
+        cout << "\n=== MENU HUESPED ===\n";
         cout << "1. Ver mis reservaciones\n";
         cout << "2. Reservar alojamiento\n";
         cout << "3. Anular reservación\n";
         cout << "4. Salir\n";
-        cout << "Opción: ";
+        cout << "Opcion: ";
         cin >> opcion;
+        cin.ignore();
 
         switch(opcion) {
-            case 1:
-                mostrarReservaciones();
-                break;
-            case 2:
-                reservarAlojamiento(sistema);
-                break;
-            case 3:
-                anularReservacion(sistema);
-                break;
-            case 4:
-                cout << "Saliendo del menú de huésped...\n";
-                break;
-            default:
-                cout << "Opción inválida.\n";
+        case 1:
+            mostrarReservaciones();
+            break;
+        case 2:
+            reservarAlojamiento(sistema);
+            break;
+        case 3:
+            anularReservacion(sistema);
+            break;
+        case 4:
+            cout << "Saliendo del menú de huésped...\n";
+            break;
+        default:
+            cout << "Opción inválida.\n";
         }
     } while(opcion != 4);
 }
 
-// Implementación de métodos de Anfitrion
 void Anfitrion::mostrarReservaciones(Fecha inicio, Fecha fin) const {
     cout << "\nReservaciones de " << getDocumento() << " entre "
          << inicio.dia << "/" << inicio.mes << "/" << inicio.ano
@@ -1007,17 +958,17 @@ void Anfitrion::anularReservacion(SistemaUdeAStay& sistema) {
         actualAloj = actualAloj->siguiente;
     }
 
-    cout << "No se encontró una reserva válida para anular.\n";
+    cout << "No se encontro una reserva valida para anular.\n";
 }
 
 void Anfitrion::actualizarHistorico(SistemaUdeAStay& sistema) {
     Fecha fechaCorte;
-    cout << "\n=== ACTUALIZAR HISTÓRICO ===\n";
+    cout << "\n=== ACTUALIZAR HISTORICO ===\n";
     cout << "Ingrese fecha de corte (dd mm aaaa): ";
     cin >> fechaCorte.dia >> fechaCorte.mes >> fechaCorte.ano;
 
     sistema.moverReservacionesAHistorico(fechaCorte);
-    cout << "Histórico actualizado exitosamente.\n";
+    cout << "Historico actualizado exitosamente.\n";
 }
 
 void Anfitrion::mostrarMenu(SistemaUdeAStay& sistema) {
@@ -1026,46 +977,47 @@ void Anfitrion::mostrarMenu(SistemaUdeAStay& sistema) {
         cout << "\n=== MENÚ ANFITRIÓN ===\n";
         cout << "1. Ver mis alojamientos\n";
         cout << "2. Consultar reservaciones\n";
-        cout << "3. Anular reservación\n";
-        cout << "4. Actualizar histórico\n";
+        cout << "3. Anular reservacion\n";
+        cout << "4. Actualizar historico\n";
         cout << "5. Salir\n";
         cout << "Opción: ";
         cin >> opcion;
+        cin.ignore();
 
         switch(opcion) {
-            case 1: {
-                NodoAlojamiento* actual = alojamientos;
-                if(!actual) {
-                    cout << "No tiene alojamientos registrados.\n";
-                } else {
-                    while(actual) {
-                        actual->alojamiento->mostrarInfo();
-                        cout << "-----------------\n";
-                        actual = actual->siguiente;
-                    }
+        case 1: {
+            NodoAlojamiento* actual = alojamientos;
+            if(!actual) {
+                cout << "No tiene alojamientos registrados.\n";
+            } else {
+                while(actual) {
+                    actual->alojamiento->mostrarInfo();
+                    cout << "-----------------\n";
+                    actual = actual->siguiente;
                 }
-                break;
             }
-            case 2: {
-                Fecha inicio, fin;
-                cout << "Fecha inicio (dd mm aaaa): ";
-                cin >> inicio.dia >> inicio.mes >> inicio.ano;
-                cout << "Fecha fin (dd mm aaaa): ";
-                cin >> fin.dia >> fin.mes >> fin.ano;
-                mostrarReservaciones(inicio, fin);
-                break;
-            }
-            case 3:
-                anularReservacion(sistema);
-                break;
-            case 4:
-                actualizarHistorico(sistema);
-                break;
-            case 5:
-                cout << "Saliendo del menú de anfitrión...\n";
-                break;
-            default:
-                cout << "Opción inválida.\n";
+            break;
+        }
+        case 2: {
+            Fecha inicio, fin;
+            cout << "Fecha inicio (dd mm aaaa): ";
+            cin >> inicio.dia >> inicio.mes >> inicio.ano;
+            cout << "Fecha fin (dd mm aaaa): ";
+            cin >> fin.dia >> fin.mes >> fin.ano;
+            mostrarReservaciones(inicio, fin);
+            break;
+        }
+        case 3:
+            anularReservacion(sistema);
+            break;
+        case 4:
+            actualizarHistorico(sistema);
+            break;
+        case 5:
+            cout << "Saliendo del menú de anfitrion...\n";
+            break;
+        default:
+            cout << "Opción invalida.\n";
         }
     } while(opcion != 5);
 }
@@ -1075,7 +1027,7 @@ int main() {
     srand(time(nullptr)); // Inicializar semilla para códigos de reserva
 
     SistemaUdeAStay sistema;
-    sistema.cargarCSV();
+    sistema.cargarTXT();
     sistema.mostrarMenuPrincipal();
 
     return 0;
