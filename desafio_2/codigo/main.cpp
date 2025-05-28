@@ -9,6 +9,7 @@ using namespace std;
 const char* ARCHIVO_DATOS = "UdeAStay_data.txt";
 
 // Estructura para fecha
+// Estructura que representa una fecha con comparación lógica
 struct Fecha {
     int dia;
     int mes;
@@ -22,11 +23,15 @@ struct Fecha {
 };
 
 // Declaraciones anticipadas
+// Clase que representa un alojamiento ofertado en el sistema
 class Alojamiento;
+// Clase que representa una reservación entre un huésped y un alojamiento
 class Reservacion;
+// Clase central que administra todo el sistema: usuarios, alojamientos y reservaciones
 class SistemaUdeAStay;
 
 // Clase Usuario (base)
+// Clase base abstracta para representar un usuario del sistema (anfitrión o huésped)
 class Usuario {
 protected:
     char* documento;
@@ -56,6 +61,7 @@ public:
 };
 
 // Clase Anfitrion
+// Clase derivada de Usuario que representa un anfitrión, con alojamientos propios
 class Anfitrion : public Usuario {
 private:
     struct NodoAlojamiento {
@@ -91,6 +97,7 @@ public:
 };
 
 // Clase Huesped
+// Clase derivada de Usuario que representa un huésped, con reservaciones
 class Huesped : public Usuario {
 public:
     struct NodoReserva {
@@ -131,6 +138,7 @@ public:
 };
 
 // Clase Alojamiento
+// Clase que representa un alojamiento ofertado en el sistema
 class Alojamiento {
 private:
     char* codigo;
@@ -193,6 +201,7 @@ public:
 };
 
 // Clase Reservacion
+// Clase que representa una reservación entre un huésped y un alojamiento
 class Reservacion {
 private:
     char* codigo;
@@ -232,6 +241,7 @@ public:
 };
 
 // Clase SistemaUdeAStay
+// Clase central que administra todo el sistema: usuarios, alojamientos y reservaciones
 class SistemaUdeAStay {
 private:
     struct NodoUsuario {
@@ -648,6 +658,7 @@ public:
 
 // Implementaciones de métodos fuera de las clases
 
+// Método para verificar si un alojamiento está disponible en un rango de fechas
 bool Alojamiento::estaDisponible(Fecha inicio, int noches) const {
     tm tmInicio = {0, 0, 0, inicio.dia, inicio.mes - 1, inicio.ano - 1900};
     time_t tInicio = mktime(&tmInicio);
@@ -666,6 +677,7 @@ bool Alojamiento::estaDisponible(Fecha inicio, int noches) const {
     return true;
 }
 
+// Agrega una nueva fecha de reserva a un alojamiento (lista enlazada)
 void Alojamiento::agregarReserva(Fecha fecha) {
     fechasReservadas = new NodoFecha(fecha, fechasReservadas);
 }
@@ -718,6 +730,7 @@ void Alojamiento::mostrarReservaciones(Fecha inicio, Fecha fin) const {
     }
 }
 
+// Verifica si una fecha dada cae dentro del rango de una reservación activa
 bool Reservacion::coincideConFecha(Fecha fecha) const {
     tm tmInicio = {0, 0, 0, fechaEntrada.dia, fechaEntrada.mes - 1, fechaEntrada.ano - 1900};
     time_t tInicio = mktime(&tmInicio);
@@ -779,6 +792,7 @@ void Huesped::mostrarReservaciones() const {
     }
 }
 
+// Lógica para que un huésped consulte disponibilidad y realice una reserva
 void Huesped::reservarAlojamiento(SistemaUdeAStay& sistema) {
     Fecha fecha;
     int noches;
@@ -852,6 +866,7 @@ void Huesped::reservarAlojamiento(SistemaUdeAStay& sistema) {
     nuevaReserva->mostrarComprobante();
 }
 
+// Permite al huésped anular una de sus reservaciones activas
 void Huesped::anularReservacion(SistemaUdeAStay& sistema) {
     if(!reservaciones) {
         cout << "No tiene reservaciones activas.\n";
@@ -961,6 +976,7 @@ void Anfitrion::anularReservacion(SistemaUdeAStay& sistema) {
     cout << "No se encontro una reserva valida para anular.\n";
 }
 
+// El anfitrión solicita al sistema mover reservaciones pasadas al histórico
 void Anfitrion::actualizarHistorico(SistemaUdeAStay& sistema) {
     Fecha fechaCorte;
     cout << "\n=== ACTUALIZAR HISTORICO ===\n";
@@ -1023,6 +1039,7 @@ void Anfitrion::mostrarMenu(SistemaUdeAStay& sistema) {
 }
 
 // Función principal
+// Función principal: inicializa el sistema, carga datos y muestra el menú
 int main() {
     srand(time(nullptr)); // Inicializar semilla para códigos de reserva
 
